@@ -2,5 +2,8 @@
   "name": "3cx-call-log-analyzer",
   "version": "1.0.0",
   "description": "3CX Call Log Analyzer — Parse call logs to extract critical metrics",
-  "private": true
+  "private": true,
+  "scripts": {
+    "build": "node -e \"const fs = require('fs'); if (!fs.existsSync('dist')) fs.mkdirSync('dist'); fs.copyFileSync('index.html', 'dist/index.html');\""
+  }
 }
