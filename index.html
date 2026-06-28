@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3CX Call Log Analyzer — sarvesh</title>
+    <meta name="description" content="Instantly parse 3CX call log outputs to extract critical call metrics including total dials, unique dials, peak hours, talk time, and call outcomes.">
+    <!-- Tailwind CSS Script -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
+                    },
+                    colors: {
+                        darkBg: '#0b1120',      // Very dark blue/slate
+                        glassBg: 'rgba(30, 41, 59, 0.4)',
+                        glassBorder: 'rgba(255, 255, 255, 0.08)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #0b1120 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+        }
+
+        /* Glassmorphism styling */
+        .glass {
+            background: theme('colors.glassBg');
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid theme('colors.glassBorder');
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Hover animation for metric cards */
+        .metric-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .metric-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Pulse glow on update */
+        @keyframes pulseGlow {
+            0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5); }
+            70% { box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        }
+
+        .metric-card.pulse-update {
+            animation: pulseGlow 0.7s ease-out;
+        }
+
+        /* Fade-in for summary */
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .summary-animate {
+            animation: fadeSlideUp 0.5s ease-out forwards;
+        }
+
+        /* Textarea custom scrollbar */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        textarea::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        textarea::-webkit-scrollbar-thumb {
+            background-color: rgba(148, 163, 184, 0.2);
+            border-radius: 4px;
+        }
+
+        textarea::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(148, 163, 184, 0.4);
+        }
+    </style>
+</head>
+
+<body class="font-sans antialiased text-slate-200 selection:bg-indigo-500/30 selection:text-indigo-200 pb-10">
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-6 space-y-8">
+
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1
+                    class="text-3xl sm:text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 drop-shadow-sm">
+                    3CX Call Log Analyzer
+                </h1>
+                <p class="text-slate-400 mt-2 text-sm sm:text-base font-medium">Instantly parse 3CX outputs to extract
+                    critical call metrics.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="clearBtn"
+                    class="px-5 py-2.5 rounded-lg text-sm font-semibold bg-slate-800/80 hover:bg-slate-700 border border-slate-600/50 hover:border-slate-500 transition-all text-slate-300 shadow-sm focus:ring-2 focus:ring-slate-500/50 focus:outline-none">
+                    Clear Input
+                </button>
+                <button id="processBtn"
+                    class="px-6 py-2.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 border border-indigo-500/50 transition-all text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    Process Data
+                </button>
+            </div>
+        </header>
+
+        <!-- Metrics Interface — 6 cards: 3 per row on lg -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+
+            <!-- Metric 1: Total Dials -->
+            <div id="card-dials" class="glass metric-card rounded-2xl p-6 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z">
+                            </path>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-4xl font-bold tracking-tight text-white drop-shadow-md" id="metric-dials">0</div>
+                    <h2 class="text-sm font-semibold text-indigo-400 uppercase tracking-wider mt-1 opacity-80">Total
+                        Dials</h2>
+                </div>
+            </div>
+
+            <!-- Metric 2: Unique Dials (NEW) -->
+            <div id="card-unique" class="glass metric-card rounded-2xl p-6 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="p-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl text-violet-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z">
+                            </path>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-4xl font-bold tracking-tight text-white drop-shadow-md" id="metric-unique">0</div>
+                    <h2 class="text-sm font-semibold text-violet-400 uppercase tracking-wider mt-1 opacity-80">Unique
+                        Dials</h2>
+                </div>
+            </div>
+
+            <!-- Metric 3: Peak Answered Calls Time (NEW) -->
+            <div id="card-peak" class="glass metric-card rounded-2xl p-6 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6">
+                            </path>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-4xl font-bold tracking-tight text-white drop-shadow-md" id="metric-peak">—</div>
+                    <h2 class="text-sm font-semibold text-amber-400 uppercase tracking-wider mt-1 opacity-80">Peak
+                        Answered Hour</h2>
+                </div>
+            </div>
+
+            <!-- Metric 4: Total Talk Time -->
+            <div id="card-duration" class="glass metric-card rounded-2xl p-6 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-4xl font-bold tracking-tight text-white drop-shadow-md" id="metric-duration">
+                        00:00:00</div>
+                    <h2 class="text-sm font-semibold text-cyan-400 uppercase tracking-wider mt-1 opacity-80">Total Talk
+                        Time</h2>
+                </div>
+            </div>
+
+            <!-- Metric 5: Answered -->
+            <div id="card-answered" class="glass metric-card rounded-2xl p-6 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-4xl font-bold tracking-tight text-white drop-shadow-md" id="metric-answered">0
+                    </div>
+                    <h2 class="text-sm font-semibold text-emerald-400 uppercase tracking-wider mt-1 opacity-80">Answered
+                        Calls</h2>
+                </div>
+            </div>
+
+            <!-- Metric 6: Unanswered -->
+            <div id="card-unanswered" class="glass metric-card rounded-2xl p-6 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-4xl font-bold tracking-tight text-white drop-shadow-md" id="metric-unanswered">0
+                    </div>
+                    <h2 class="text-sm font-semibold text-rose-400 uppercase tracking-wider mt-1 opacity-80">Missed /
+                        Unanswered</h2>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Result Summary -->
+        <div id="result-summary-box"
+            class="glass rounded-xl p-5 hidden shadow-lg border border-indigo-500/30 bg-indigo-900/10 mb-4 transition-all">
+            <div class="flex items-center gap-2 mb-4">
+                <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                    </path>
+                </svg>
+                <span class="text-white font-semibold text-base">Result Summary</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 font-mono text-sm">
+                <div class="flex flex-col gap-1">
+                    <span class="text-indigo-400 font-bold text-xs uppercase tracking-wider">Total Dials</span>
+                    <span id="summary-dials" class="text-white text-lg font-bold tracking-widest">0</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-violet-400 font-bold text-xs uppercase tracking-wider">Unique Dials</span>
+                    <span id="summary-unique" class="text-white text-lg font-bold tracking-widest">0</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-amber-400 font-bold text-xs uppercase tracking-wider">Peak Hour</span>
+                    <span id="summary-peak" class="text-white text-lg font-bold tracking-widest">—</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-cyan-400 font-bold text-xs uppercase tracking-wider">Total Talk Time</span>
+                    <span id="summary-duration" class="text-white text-lg font-bold tracking-widest">00:00:00</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-emerald-400 font-bold text-xs uppercase tracking-wider">Answered</span>
+                    <span id="summary-answered" class="text-white text-lg font-bold tracking-widest">0</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-rose-400 font-bold text-xs uppercase tracking-wider">Not Answered</span>
+                    <span id="summary-unanswered" class="text-white text-lg font-bold tracking-widest">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Section -->
+        <div class="glass rounded-2xl overflow-hidden mt-2 flex flex-col shadow-2xl h-[550px]">
+            <div
+                class="bg-black/20 px-5 py-3.5 border-b border-white/5 flex items-center justify-between backdrop-blur-md">
+                <div class="flex items-center gap-2">
+                    <div class="w-2.5 h-2.5 rounded-full bg-rose-500/80 shadow-[0_0_8px_rgba(244,63,94,0.6)]"></div>
+                    <div class="w-2.5 h-2.5 rounded-full bg-amber-500/80 shadow-[0_0_8px_rgba(245,158,11,0.6)]"></div>
+                    <div class="w-2.5 h-2.5 rounded-full bg-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.6)]">
+                    </div>
+                    <span class="ml-3 text-sm font-semibold tracking-wide text-slate-300">Data Input Source</span>
+                </div>
+                <div class="bg-white/5 px-2.5 py-1 rounded-md border border-white/5">
+                    <span id="lineCount" class="text-xs font-mono text-slate-400">0 rows parsed</span>
+                </div>
+            </div>
+            <textarea id="logInput"
+                class="flex-1 w-full bg-slate-900/40 p-6 text-[15px] font-mono leading-relaxed text-slate-200 focus:outline-none resize-none placeholder-slate-600 focus:bg-slate-900/60 transition-colors"
+                placeholder="Paste your multi-line call logs here...&#10;&#10;[Example Format]&#10;07415527980&#10;04/14/2026 7:35 PM, 00:12:43&#10;&#10;08926040811&#10;04/14/2026 7:34 PM, 00:00:20"></textarea>
+        </div>
+    </div>
+
+    <!-- JavaScript Data Processing Engine -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const domElements = {
+                processBtn: document.getElementById('processBtn'),
+                clearBtn: document.getElementById('clearBtn'),
+                logInput: document.getElementById('logInput'),
+                dials: document.getElementById('metric-dials'),
+                unique: document.getElementById('metric-unique'),
+                peak: document.getElementById('metric-peak'),
+                duration: document.getElementById('metric-duration'),
+                answered: document.getElementById('metric-answered'),
+                unanswered: document.getElementById('metric-unanswered'),
+                lineCount: document.getElementById('lineCount'),
+                summaryBox: document.getElementById('result-summary-box'),
+                smDials: document.getElementById('summary-dials'),
+                smUnique: document.getElementById('summary-unique'),
+                smPeak: document.getElementById('summary-peak'),
+                smAnswered: document.getElementById('summary-answered'),
+                smUnanswered: document.getElementById('summary-unanswered'),
+                smDuration: document.getElementById('summary-duration'),
+                // Cards for pulse animation
+                cardDials: document.getElementById('card-dials'),
+                cardUnique: document.getElementById('card-unique'),
+                cardPeak: document.getElementById('card-peak'),
+                cardDuration: document.getElementById('card-duration'),
+                cardAnswered: document.getElementById('card-answered'),
+                cardUnanswered: document.getElementById('card-unanswered'),
+            };
+
+            const timePattern = /\d{1,2}:\d{2}:\d{2}/;
+
+            // Matches typical date/time patterns like "04/14/2026 7:35 PM"
+            const dateTimePattern = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+
+            const parseDurationToSeconds = (timeStr) => {
+                if (!timeStr) return 0;
+                const parts = timeStr.split(':').map(Number);
+                if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+                    return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+                }
+                return 0;
+            };
+
+            const formatSecondsToDuration = (totalSeconds) => {
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = totalSeconds % 60;
+                return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            };
+
+            /**
+             * Extract hour (0-23) from a line that contains a date/time like "04/14/2026 7:35 PM"
+             * Returns -1 if no valid time found.
+             */
+            const extractHour = (line) => {
+                const match = line.match(dateTimePattern);
+                if (!match) return -1;
+                let hour = parseInt(match[4], 10);
+                const ampm = match[6].toUpperCase();
+                if (ampm === 'PM' && hour !== 12) hour += 12;
+                if (ampm === 'AM' && hour === 12) hour = 0;
+                return hour;
+            };
+
+            /**
+             * Format 24h hour integer to a readable range like "7 PM – 8 PM"
+             */
+            const formatHourRange = (hour) => {
+                if (hour < 0 || hour > 23) return '—';
+                const startSuffix = hour >= 12 ? 'PM' : 'AM';
+                const endHour = (hour + 1) % 24;
+                const endSuffix = endHour >= 12 ? 'PM' : 'AM';
+                const displayStart = hour % 12 === 0 ? 12 : hour % 12;
+                const displayEnd = endHour % 12 === 0 ? 12 : endHour % 12;
+                return `${displayStart} ${startSuffix} – ${displayEnd} ${endSuffix}`;
+            };
+
+            const handleProcessing = () => {
+                const textVal = domElements.logInput.value;
+                if (!textVal.trim()) {
+                    resetDashboard();
+                    return;
+                }
+
+                // 1. Split by \n
+                // 2. Map & Trim: remove trailing/leading spaces
+                // 3. Filter: prevent blank lines from registering as dials
+                const lines = textVal.split(/\r?\n/).map(val => val.trim()).filter(val => val.length > 0);
+
+                let totalDialCount = 0;
+                let sumTalkSeconds = 0;
+                let answeredCount = 0;
+                let unansweredCount = 0;
+                const uniqueNumbers = new Set();
+                const answeredHourCounts = {};  // { hour: count }
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+
+                    // Identify Phone number: 10-11+ digit string
+                    if (/^[\d\s\+\-\(\)]{8,15}$/.test(line) && /\d{8,}/.test(line)) {
+                        totalDialCount++;
+
+                        // Extract clean digits for unique tracking
+                        const cleanNumber = line.replace(/[\s\+\-\(\)]/g, '');
+                        uniqueNumbers.add(cleanNumber);
+
+                        let hasDuration = false;
+
+                        // Because blank lines are filtered out, the direct next line will be the Timestamp
+                        if (i + 1 < lines.length) {
+                            const nextLine = lines[i + 1];
+                            const durationExtraction = nextLine.match(timePattern);
+
+                            // "Answered: Any dial that includes a talk time duration ($HH:MM:SS$)."
+                            if (durationExtraction && durationExtraction[0]) {
+                                hasDuration = true;
+                                sumTalkSeconds += parseDurationToSeconds(durationExtraction[0]);
+
+                                // Track the hour this answered call happened
+                                const hour = extractHour(nextLine);
+                                if (hour >= 0) {
+                                    answeredHourCounts[hour] = (answeredHourCounts[hour] || 0) + 1;
+                                }
+                            }
+
+                            // Iterate past the correlated timestamp line
+                            i++;
+                        }
+
+                        if (hasDuration) {
+                            answeredCount++;
+                        } else {
+                            // Ends without a HH:MM:SS duration string
+                            unansweredCount++;
+                        }
+                    }
+                }
+
+                const finalTalkTime = formatSecondsToDuration(sumTalkSeconds);
+                const uniqueDialCount = uniqueNumbers.size;
+
+                // Determine peak answered hour
+                let peakHour = -1;
+                let peakCount = 0;
+                for (const [hour, count] of Object.entries(answeredHourCounts)) {
+                    if (count > peakCount) {
+                        peakCount = count;
+                        peakHour = parseInt(hour, 10);
+                    }
+                }
+                const peakDisplay = peakHour >= 0 ? formatHourRange(peakHour) : '—';
+
+                // Update Stat Cards with counters seamlessly
+                triggerCountAnimation(domElements.dials, parseInt(domElements.dials.innerText) || 0, totalDialCount, 600);
+                triggerCountAnimation(domElements.unique, parseInt(domElements.unique.innerText) || 0, uniqueDialCount, 600);
+                triggerCountAnimation(domElements.answered, parseInt(domElements.answered.innerText) || 0, answeredCount, 600);
+                triggerCountAnimation(domElements.unanswered, parseInt(domElements.unanswered.innerText) || 0, unansweredCount, 600);
+                domElements.duration.innerText = finalTalkTime;
+                domElements.peak.innerText = peakDisplay;
+
+                // Pulse animation on cards
+                const allCards = [
+                    domElements.cardDials, domElements.cardUnique, domElements.cardPeak,
+                    domElements.cardDuration, domElements.cardAnswered, domElements.cardUnanswered
+                ];
+                allCards.forEach((card, idx) => {
+                    if (card) {
+                        setTimeout(() => {
+                            card.classList.add('pulse-update');
+                            card.addEventListener('animationend', () => card.classList.remove('pulse-update'), { once: true });
+                        }, idx * 80);
+                    }
+                });
+
+                // Expose explicit summary box
+                if (domElements.summaryBox) {
+                    domElements.summaryBox.classList.remove('hidden');
+                    domElements.summaryBox.classList.add('summary-animate');
+                    domElements.smDials.innerText = totalDialCount;
+                    domElements.smUnique.innerText = uniqueDialCount;
+                    domElements.smPeak.innerText = peakDisplay;
+                    domElements.smAnswered.innerText = answeredCount;
+                    domElements.smUnanswered.innerText = unansweredCount;
+                    domElements.smDuration.innerText = finalTalkTime;
+                }
+
+                domElements.lineCount.innerText = `${lines.length} valid items scanned`;
+            };
+
+            const resetDashboard = () => {
+                domElements.dials.innerText = '0';
+                domElements.unique.innerText = '0';
+                domElements.peak.innerText = '—';
+                domElements.duration.innerText = '00:00:00';
+                domElements.answered.innerText = '0';
+                domElements.unanswered.innerText = '0';
+                domElements.logInput.value = '';
+                domElements.lineCount.innerText = '0 rows parsed';
+                if (domElements.summaryBox) {
+                    domElements.summaryBox.classList.add('hidden');
+                    domElements.summaryBox.classList.remove('summary-animate');
+                }
+            };
+
+            // Easing animation for smooth counter logic 
+            const triggerCountAnimation = (node, start, end, durationMs) => {
+                let startTimestamp = null;
+                const iterate = (timestamp) => {
+                    if (!startTimestamp) startTimestamp = timestamp;
+                    const frameProgress = Math.min((timestamp - startTimestamp) / durationMs, 1);
+                    const easeOut = 1 - Math.pow(1 - frameProgress, 4);
+                    node.innerHTML = Math.floor(easeOut * (end - start) + start);
+                    if (frameProgress < 1) window.requestAnimationFrame(iterate);
+                    else node.innerHTML = end;
+                };
+                window.requestAnimationFrame(iterate);
+            };
+
+            domElements.processBtn.addEventListener('click', handleProcessing);
+            domElements.clearBtn.addEventListener('click', resetDashboard);
+
+            domElements.logInput.addEventListener('input', () => {
+                const count = domElements.logInput.value.split(/\r?\n/).filter(line => line.trim().length > 0).length;
+                domElements.lineCount.innerText = `${count} rows pending`;
+            });
+        });
+    </script>
+</body>
+
+</html>
